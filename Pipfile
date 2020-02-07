@@ -12,6 +12,8 @@ pandas = "*"
 numpy = "*"
 scipy = "*"
 matplotlib = "*"
+click = "*"
+funcy = "*"
 
 [requires]
 python_version = "3.8"

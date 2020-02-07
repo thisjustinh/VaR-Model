@@ -6,11 +6,11 @@ from scipy.stats import norm
 
 
 DEBUG = False
-
-
-def portfolioValueAtRisk(portfolio: dict, start: str, end: str, conf: float):
+    
+    
+def portfolio_var(portfolio: dict, start: str, end: str, conf: float, method: str, days: int = 30, trials: int = 1000) -> float:
     """
-    Calculates overall Value at Risk (VaR) for a portfolio of equities.
+    Calculates overall Value at Risk (VaR) for a portfolio of equities, using given method
     @param portfolio: Dictionary of equities, where the key is the ticker and value is its weight in the portfolio (% dollar value)
     @param start: Start date for eod-values
     @param end: End date for eod-values
@@ -18,22 +18,37 @@ def portfolioValueAtRisk(portfolio: dict, start: str, end: str, conf: float):
     """
 
     values = []
-    for ticker, weight in portfolio:
-        values.append(weight * getValueAtRisk(ticker, start, end, conf))
+
+    if method == "historical":
+        for ticker, weight in portfolio.items():
+            values.append(weight * historical_var(ticker, start, end, conf))
+    elif method == "monte-carlo":
+        for ticker, weight in portfolio.items():
+            values.append(weight * mc_var(ticker, start, end, conf, days, trials))
+    else:  # default method is variance-covariance
+        for ticker, weight in portfolio.items():
+            values.append(weight * variance_var(ticker, start, end, conf))
+
     return sum(values)
 
-def historicalValueAtRisk(ticker: str, start: str, end: str, conf: float):
+
+def historical_var(ticker: str, start: str, end: str, conf: float):
     """
     Calculates Value at Risk (VaR) for a certain equity by checking historical returns
+    @param ticker: Equity ticker
+    @param start: Start date for historical data
+    @param end: End date for historical data
+    @param conf: Confidence level
     """
     # Get historical eod values and calculate percent returns per day
     historical_eod = yf.Ticker(ticker).history(start=start, end=end)
     returns = historical_eod['Close'].pct_change()
 
     returns = np.sort(returns)
-    return round(returns[int((1 - conf) * returns.size)], 4)
+    return round(returns[int((1 - conf) * returns.size)], 4)  # Find complementary percentile of confidence level value
 
-def getValueAtRisk(ticker: str, start: str, end: str, conf: float):
+
+def variance_var(ticker: str, start: str, end: str, conf: float):
     """
     Calculates Value at Risk (VaR) for a certain equity
     @param ticker: Equity ticker
@@ -50,23 +65,32 @@ def getValueAtRisk(ticker: str, start: str, end: str, conf: float):
     mu = returns.mean()
     sigma = returns.std()  # TODO: use unbiased estimator (n-1) or not?
     ppf = norm.ppf(1 - conf)  # Get ppf of normal distribution at inverse of confidence level
-    return round(mu + ppf*sigma, 4)   # Subtract average returns from the maximum expected loss (ppf * standard deviation)
+    return round(mu + ppf*sigma, 4)   # Add average returns (expected value_ to the maximum expected loss (ppf * standard deviation)
 
 
-def simulateValueAtRisk(ticker: str, start: str, end: str, conf: float, days: int, trials: int):
+def mc_var(ticker: str, start: str, end: str, conf: float, days: int, trials: int):
     """
-    Calculate Value at Risk (VaR) using Monte-Carlo Simulation
+    Calculate Value at Risk (VaR) using Monte-Carlo Simulation and geometric Brownian motion.
+    @param ticker: Equity ticker
+    @param start: Start date for historical data
+    @param end: End date for historical data
+    @param conf: Confidence level
+    @param days: How many days ahead to project
+    @param trials: How many iterations to simulate
     """
     historical_eod = yf.Ticker(ticker).history(start=start, end=end)
     returns = historical_eod['Close'].pct_change()
     ln_returns = np.log(1 + returns)
     
+    # Calculate drift and get std dev. Save as numpy arrays for use in Brownian motion
     mu = np.array(ln_returns.mean())
     drift = np.array(mu - 0.5 * ln_returns.var())
     sigma = np.array(ln_returns.std())
 
+    # As described for Monte Carlo
     mc_returns = np.exp(drift + sigma * norm.ppf(np.random.rand(days, trials)))
-
+    
+    # Fill in values in similar np array, initalize with latest market price and perform Brownian motion
     prices = np.zeros_like(mc_returns)
     prices[0] = historical_eod['Close'].iloc[-1]
     for day in range(1, days):
@@ -77,6 +101,7 @@ def simulateValueAtRisk(ticker: str, start: str, end: str, conf: float, days: in
         print(mc_returns)
         print(prices)
 
+    # Plot Monte-Carlo simulation results
     plt.plot(prices)
     plt.show()
 
@@ -90,7 +115,7 @@ def simulateValueAtRisk(ticker: str, start: str, end: str, conf: float, days: in
         print(prices)
         print(mc_change)
 
-    return np.sort(mc_change)[int((1 - conf) * trials)]
+    return round(np.sort(mc_change)[int((1 - conf) * trials)], 4)  # return rounded value of complementarypercentile of confidence level from percent change to reflect max loss
 
 
 if __name__=='__main__':
