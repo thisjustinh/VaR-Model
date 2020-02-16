@@ -12,6 +12,7 @@ pandas = "*"
 numpy = "*"
 scipy = "*"
 matplotlib = "*"
+lxml = "*"
 
 [requires]
 python_version = "3.8"
